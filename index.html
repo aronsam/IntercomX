@@ -65,7 +65,7 @@ const log = t => $('log').textContent = t;
 
 function refresh(){
   const n = Object.keys(calls).length;
-  $('status').textContent = n ? `Room ${roomCode}: ${n} kausap ✔` : `Room ${roomCode}: naghihintay ng kasama…`;
+  $('status').textContent = n ? `Room ${roomCode}: ${n} kausap ✔` : `Room ${roomCode}: Waiting for Joiner`;
   $('ptt').disabled = n === 0;
 }
 
@@ -85,7 +85,7 @@ async function start(mode){
   refresh();
 
   peer.on('error', e => {
-    if(e.type === 'unavailable-id') fail('May gumagamit na ng room code na ito. Pumili ng ibang code.');
+    if(e.type === 'unavailable-id') fail('Code is not available, please use another code.');
     else if(e.type === 'peer-unavailable'){ if(!joined) fail('Walang room na ganyang code. Gawin muna sa kabilang phone.'); }
     else if(e.type !== 'webrtc') fail('Error: ' + e.type);
   });
@@ -138,7 +138,7 @@ const setTalk = on => {
   if(!stream) return;
   stream.getAudioTracks()[0].enabled = on;
   $('ptt').classList.toggle('live', on);
-  $('ptt').textContent = on ? 'Nagsasalita…' : 'Pindutin para magsalita';
+  $('ptt').textContent = on ? 'Talking…' : 'Push to Talk';
 };
 const ptt = $('ptt');
 ptt.addEventListener('pointerdown', e => { e.preventDefault(); if(!$('open').checked) setTalk(true); });
@@ -148,7 +148,7 @@ ptt.addEventListener('contextmenu', e => e.preventDefault());
 
 $('host').onclick = () => start('host');
 $('join').onclick = () => start('join');
-$('end').onclick = () => fail('Natapos ang usapan.');
+$('end').onclick = () => fail('Call End');
 </script>
 </body>
 </html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Intercom</title>
+<style>
+:root{--bg:#1b2a29;--panel:#243736;--ink:#eef3ef;--mute:#9bb0ab;--amber:#f2b134;--red:#e0574a;--green:#5fcf8a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));user-select:none;-webkit-user-select:none}
+main{width:100%;max-width:420px;flex:1;display:flex;flex-direction:column;gap:16px}
+h1{font-size:1.4rem;margin:8px 0 0}
+.panel{background:var(--panel);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+label{font-size:.9rem;color:var(--mute)}
+input[type=text]{font:inherit;font-size:1.6rem;letter-spacing:.2em;text-align:center;padding:10px;border-radius:8px;border:2px solid #3a5251;background:var(--bg);color:var(--ink);width:100%}
+input[type=text]:focus-visible,button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.row{display:flex;gap:10px}
+.row button{flex:1}
+button{font:inherit;font-weight:600;padding:14px;border-radius:8px;border:0;cursor:pointer;background:var(--amber);color:#1b1b1b}
+button.alt{background:transparent;color:var(--ink);border:2px solid #4b6866}
+#call{display:none;flex:1;flex-direction:column;gap:16px}
+#status{text-align:center;font-weight:600}
+#ptt{flex:1;min-height:220px;border-radius:24px;font-size:1.5rem;background:var(--panel);color:var(--ink);border:4px solid #4b6866;touch-action:none;transition:background .1s,border-color .1s}
+#ptt.live{background:var(--red);border-color:#ffb3aa;color:#fff}
+#ptt:disabled{opacity:.4}
+.opt{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:.95rem}
+.opt input{width:20px;height:20px}
+#log{font-size:.8rem;color:var(--mute);text-align:center;min-height:1.2em}
+@media (prefers-reduced-motion:reduce){#ptt{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Intercom</h1>
+
+  <section id="setup" class="panel">
+    <label for="code">Room code (parehong code sa dalawang phone)</label>
+    <input id="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="RCV01">
+    <div class="row">
+      <button id="host">Gumawa ng room</button>
+      <button id="join" class="alt">Sumali</button>
+    </div>
+    <div id="log">Una: pindutin ang "Gumawa" sa Phone A, tapos "Sumali" sa Phone B.</div>
+  </section>
+
+  <section id="call">
+    <div id="status">Kumokonekta…</div>
+    <button id="ptt" disabled>Pindutin para magsalita</button>
+    <label class="opt"><input id="open" type="checkbox"> Open mic (tuloy-tuloy, parang tawag)</label>
+    <button id="end" class="alt">Tapusin</button>
+  </section>
+</main>
+<audio id="remote" autoplay playsinline></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PREFIX = 'gs-intercom-v1-';
+let peer, stream, call, wake;
+
+const log = t => $('log').textContent = t;
+const status = t => $('status').textContent = t;
+
+async function start(mode){
+  const code = $('code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(code.length < 3){ log('Mag-type ng room code (3–8 letra/numero).'); return; }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  }catch(e){ log('Hindi ma-access ang mic. I-allow ang permission at gamitin ang HTTPS.'); return; }
+  stream.getAudioTracks()[0].enabled = false; // naka-mute hanggang pindutin
+  $('setup').style.display = 'none'; $('call').style.display = 'flex';
+  try{ wake = await navigator.wakeLock?.request('screen'); }catch(e){}
+
+  const hostId = PREFIX + code;
+  peer = mode === 'host' ? new Peer(hostId) : new Peer();
+  status(mode === 'host' ? 'Naghihintay ng kabilang phone…' : 'Kumokonekta…');
+
+  peer.on('error', e => {
+    if(e.type === 'unavailable-id') fail('May gumagamit na ng room code na ito. Pumili ng ibang code.');
+    else if(e.type === 'peer-unavailable') fail('Walang room na ganyang code. Gawin muna sa kabilang phone.');
+    else fail('Error: ' + e.type);
+  });
+  peer.on('call', c => { c.answer(stream); attach(c); });          // host
+  peer.on('open', () => { if(mode === 'join') attach(peer.call(hostId, stream)); }); // guest
+}
+
+function attach(c){
+  call = c;
+  c.on('stream', rs => {
+    $('remote').srcObject = rs; $('remote').play().catch(()=>{});
+    status('Konektado ✔'); $('ptt').disabled = false;
+  });
+  c.on('close', () => fail('Naputol ang koneksyon.'));
+}
+
+function fail(msg){ cleanup(); $('call').style.display='none'; $('setup').style.display='flex'; log(msg); }
+function cleanup(){
+  try{call?.close()}catch(e){} try{peer?.destroy()}catch(e){}
+  stream?.getTracks().forEach(t=>t.stop()); try{wake?.release()}catch(e){}
+  call = peer = stream = null; $('ptt').disabled = true; $('ptt').classList.remove('live');
+}
+
+// Push-to-talk
+const setTalk = on => {
+  if(!stream) return;
+  stream.getAudioTracks()[0].enabled = on;
+  $('ptt').classList.toggle('live', on);
+  $('ptt').textContent = on ? 'Nagsasalita…' : 'Pindutin para magsalita';
+};
+const ptt = $('ptt');
+ptt.addEventListener('pointerdown', e => { e.preventDefault(); if(!$('open').checked) setTalk(true); });
+['pointerup','pointercancel','pointerleave'].forEach(ev => ptt.addEventListener(ev, () => { if(!$('open').checked) setTalk(false); }));
+$('open').addEventListener('change', e => setTalk(e.target.checked));
+ptt.addEventListener('contextmenu', e => e.preventDefault());
+
+$('host').onclick = () => start('host');
+$('join').onclick = () => start('join');
+$('end').onclick = () => fail('Natapos ang usapan.');
+</script>
+</body>
+</html>

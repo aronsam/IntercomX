@@ -32,23 +32,23 @@ button.alt{background:transparent;color:var(--ink);border:2px solid #4b6866}
 </head>
 <body>
 <main>
-  <h1>Intercom</h1>
+  <h1>Kamote Intercom</h1>
 
   <section id="setup" class="panel">
-    <label for="code">Room code (parehong code sa lahat ng phone)</label>
+    <label for="code">Use same Code to all cellphone)</label>
     <input id="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="RCV01">
     <div class="row">
-      <button id="host">Gumawa ng room</button>
-      <button id="join" class="alt">Sumali</button>
+      <button id="host">Create Room</button>
+      <button id="join" class="alt">Join</button>
     </div>
-    <div id="log">Una: "Gumawa ng room" sa unang phone. Ang iba, "Sumali" gamit ang parehong code.</div>
+    <div id="log"> “Tap ‘Create Room’ on the first phone. On the second phone, enter the same code and tap Join.”</div>
   </section>
 
   <section id="call">
-    <div id="status">Kumokonekta…</div>
-    <button id="ptt" disabled>Pindutin para magsalita</button>
-    <label class="opt"><input id="open" type="checkbox"> Open mic (tuloy-tuloy, parang tawag)</label>
-    <button id="end" class="alt">Tapusin</button>
+    <div id="status">Connecting.…</div>
+    <button id="ptt" disabled>Push to talk</button>
+    <label class="opt"><input id="open" type="checkbox"> Open mic</label>
+    <button id="end" class="alt">End</button>
   </section>
 </main>
 <div id="audios"></div>

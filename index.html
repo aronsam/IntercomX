@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Intercom</title>
 <style>
-:root{--bg:#1b2a29;--panel:#243736;--ink:#eef3ef;--mute:#9bb0ab;--amber:#f2b134;--red:#e0574a;--green:#5fcf8a}
+:root{--bg:#1b2a29;--panel:#243736;--ink:#eef3ef;--mute:#9bb0ab;--amber:#f2b134;--red:#e0574a}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));user-select:none;-webkit-user-select:none}
@@ -35,13 +35,13 @@ button.alt{background:transparent;color:var(--ink);border:2px solid #4b6866}
   <h1>Intercom</h1>
 
   <section id="setup" class="panel">
-    <label for="code">Room code (parehong code sa dalawang phone)</label>
+    <label for="code">Room code (parehong code sa lahat ng phone)</label>
     <input id="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="RCV01">
     <div class="row">
       <button id="host">Gumawa ng room</button>
       <button id="join" class="alt">Sumali</button>
     </div>
-    <div id="log">Una: pindutin ang "Gumawa" sa Phone A, tapos "Sumali" sa Phone B.</div>
+    <div id="log">Una: "Gumawa ng room" sa unang phone. Ang iba, "Sumali" gamit ang parehong code.</div>
   </section>
 
   <section id="call">
@@ -51,16 +51,23 @@ button.alt{background:transparent;color:var(--ink);border:2px solid #4b6866}
     <button id="end" class="alt">Tapusin</button>
   </section>
 </main>
-<audio id="remote" autoplay playsinline></audio>
+<div id="audios"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const PREFIX = 'gs-intercom-v1-';
-let peer, stream, call, wake;
+const PREFIX = 'gs-intercom-v2-';
+let peer, stream, wake, isHost, joined, roomCode;
+let calls = {};            // peerId -> call (lahat ng kausap)
+let members = new Set();   // host lang: listahan ng nasa room
 
 const log = t => $('log').textContent = t;
-const status = t => $('status').textContent = t;
+
+function refresh(){
+  const n = Object.keys(calls).length;
+  $('status').textContent = n ? `Room ${roomCode}: ${n} kausap ✔` : `Room ${roomCode}: naghihintay ng kasama…`;
+  $('ptt').disabled = n === 0;
+}
 
 async function start(mode){
   const code = $('code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -68,37 +75,62 @@ async function start(mode){
   try{
     stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   }catch(e){ log('Hindi ma-access ang mic. I-allow ang permission at gamitin ang HTTPS.'); return; }
-  stream.getAudioTracks()[0].enabled = false; // naka-mute hanggang pindutin
+  stream.getAudioTracks()[0].enabled = false;
+  isHost = mode === 'host'; roomCode = code; joined = false;
   $('setup').style.display = 'none'; $('call').style.display = 'flex';
   try{ wake = await navigator.wakeLock?.request('screen'); }catch(e){}
 
   const hostId = PREFIX + code;
-  peer = mode === 'host' ? new Peer(hostId) : new Peer();
-  status(mode === 'host' ? 'Naghihintay ng kabilang phone…' : 'Kumokonekta…');
+  peer = isHost ? new Peer(hostId) : new Peer();
+  refresh();
 
   peer.on('error', e => {
     if(e.type === 'unavailable-id') fail('May gumagamit na ng room code na ito. Pumili ng ibang code.');
-    else if(e.type === 'peer-unavailable') fail('Walang room na ganyang code. Gawin muna sa kabilang phone.');
-    else fail('Error: ' + e.type);
+    else if(e.type === 'peer-unavailable'){ if(!joined) fail('Walang room na ganyang code. Gawin muna sa kabilang phone.'); }
+    else if(e.type !== 'webrtc') fail('Error: ' + e.type);
   });
-  peer.on('call', c => { c.answer(stream); attach(c); });          // host
-  peer.on('open', () => { if(mode === 'join') attach(peer.call(hostId, stream)); }); // guest
+
+  // Sinumang tumawag sa akin: sagutin
+  peer.on('call', c => { c.answer(stream); attach(c); });
+
+  if(isHost){
+    peer.on('open', id => members.add(id));
+    // Pagsali ng bago: bigyan siya ng listahan ng nasa room
+    peer.on('connection', conn => {
+      conn.on('open', () => { conn.send({peers:[...members]}); members.add(conn.peer); });
+      conn.on('close', () => members.delete(conn.peer));
+    });
+  }else{
+    peer.on('open', () => {
+      const conn = peer.connect(hostId);
+      conn.on('open', () => { joined = true; });
+      // Dumating ang listahan: tawagan lahat ng nasa room
+      conn.on('data', d => (d.peers || []).forEach(id => { if(!calls[id]) attach(peer.call(id, stream)); }));
+    });
+  }
 }
 
 function attach(c){
-  call = c;
+  const id = c.peer;
+  calls[id] = c;
   c.on('stream', rs => {
-    $('remote').srcObject = rs; $('remote').play().catch(()=>{});
-    status('Konektado ✔'); $('ptt').disabled = false;
+    let a = $('a-' + id);
+    if(!a){ a = document.createElement('audio'); a.id = 'a-' + id; a.autoplay = true; a.playsInline = true; $('audios').appendChild(a); }
+    a.srcObject = rs; a.play().catch(()=>{});
+    refresh();
   });
-  c.on('close', () => fail('Naputol ang koneksyon.'));
+  const gone = () => { delete calls[id]; $('a-' + id)?.remove(); refresh(); };
+  c.on('close', gone); c.on('error', gone);
 }
 
 function fail(msg){ cleanup(); $('call').style.display='none'; $('setup').style.display='flex'; log(msg); }
 function cleanup(){
-  try{call?.close()}catch(e){} try{peer?.destroy()}catch(e){}
+  Object.values(calls).forEach(c => { try{c.close()}catch(e){} });
+  try{peer?.destroy()}catch(e){}
   stream?.getTracks().forEach(t=>t.stop()); try{wake?.release()}catch(e){}
-  call = peer = stream = null; $('ptt').disabled = true; $('ptt').classList.remove('live');
+  $('audios').innerHTML = '';
+  calls = {}; members = new Set(); peer = stream = null;
+  $('ptt').disabled = true; $('ptt').classList.remove('live'); $('ptt').textContent = 'Pindutin para magsalita';
 }
 
 // Push-to-talk

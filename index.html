@@ -86,7 +86,7 @@ async function start(mode){
 
   peer.on('error', e => {
     if(e.type === 'unavailable-id') fail('Code is not available, please use another code.');
-    else if(e.type === 'peer-unavailable'){ if(!joined) fail('Walang room na ganyang code. Gawin muna sa kabilang phone.'); }
+    else if(e.type === 'peer-unavailable'){ if(!joined) fail('No Room for that code.Please input the Correct Code'); }
     else if(e.type !== 'webrtc') fail('Error: ' + e.type);
   });
 
